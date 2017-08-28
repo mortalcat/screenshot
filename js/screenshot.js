@@ -8,7 +8,7 @@ Screenshot.board = function (id, opts) {
 
     //TODO: check, this should be called only once
     this.id = id;
-    console.log(id)
+    //console.log(id)
     this.$el = $(document.getElementById(id));
 
     if (!this.$el.length) {
@@ -16,7 +16,7 @@ Screenshot.board = function (id, opts) {
     }
 
     var btnTpl = "<div id='control-panel'><button id='board-btn'>Screenshot</button></div>";
-    this.$el.addClass('screenshot-board').append(btnTpl);
+    this.$el.addClass('screenshot-board').css({position:"relative"}).append(btnTpl);
 
     this.dom = {
         $ctrlPnl: this.$el.find("#control-panel"),
@@ -32,6 +32,7 @@ Screenshot.board = function (id, opts) {
 
     this.bindShotBtn();
     this.initControls();
+    this.disableCtrlBtns()
     this.ev.bind('board:shotCreated', $.proxy(this.initDrawing, this));
 
 
@@ -42,7 +43,11 @@ Screenshot.board.defaultOpts = {
     controls: ['draw', 'upload', 'download', "noaCtrlblabla"],
     drawPathColor : "red",
     drawPathR: 8,
-    blurR:20
+    blurR:20,
+    textBoxWidth: 300,
+    textBoxHeight: 50,
+    textFont : '16px serif',
+    textLineHeight : 20
 };
 
 Screenshot.board.prototype = {
@@ -53,11 +58,12 @@ Screenshot.board.prototype = {
     },
     shotBtnClickHandler: function () {
         var boardP = this;
-        console.log(boardP)
+        //console.log(boardP)
         html2canvas(document.body).then(function (canvas) {//append canvas to board section
-            console.log(boardP);
+            //console.log(boardP);
             boardP.$el.append(canvas);
             boardP.dom.$canvas = $("canvas")[0];
+            $("canvas").css({"border": "1px solid red"});
             //boardP.state.shotCreated = true;
             boardP.ev.trigger('board:shotCreated');
 
@@ -74,7 +80,6 @@ Screenshot.board.prototype = {
             boardP.blurctx  = boardP.dom.$blurCanvas.getContext("2d");
             boardP.savectx  = boardP.dom.$saveCanvas.getContext("2d");
             boardP.savectx.drawImage(boardP.dom.$canvas,0,0);
-
         })
     },
 
@@ -122,6 +127,7 @@ Screenshot.board.prototype = {
     },
 
     initDrawing: function () {
+        this.enableCtrlBtns();
         this.downflag = false,
         this.prevX = 0,
         this.currX = 0,
@@ -141,7 +147,46 @@ Screenshot.board.prototype = {
             this.drawHandler('out', e)
         }, this), false);
     },
+    enableCtrlBtns : function () {
+        this.dom.$ctrlPnl.find(".board-control").each(function () {
+                $( this ).prop('disabled', false);
+            });
+    },
+    disableCtrlBtns: function () {
+        this.dom.$ctrlPnl.find(".board-control").each(function () {
+            $( this ).prop('disabled', true);
+        });
+    },
 
+    drawText : function (boxLeft, boxTop, content) {
+        if(!content || content ===""){
+            console.log("no content. no draw");
+            return;
+        }
+        this.ctx.font = this.opts.textFont;
+        //caculate and draw each line
+        var y = boxTop + this.opts.textBoxHeight / 2 + this.opts.textLineHeight/2;
+        this.wrapText(this.ctx, content, boxLeft, y, this.opts.textBoxWidth, this.opts.textLineHeight);
+
+    },
+    wrapText : function(context, text, x, y, maxWidth, lineHeight) {
+        var words = text.split(' ');
+        var line = '';
+        for(var n = 0; n < words.length; n++) {
+            var testLine = line + words[n] + ' ';
+            var metrics = context.measureText(testLine);
+            var testWidth = metrics.width;
+            if (testWidth > maxWidth && n > 0) {
+                context.fillText(line, x, y);
+                line = words[n] + ' ';
+                y += lineHeight;
+            }
+            else {
+                line = testLine;
+            }
+        }
+        context.fillText(line, x, y);
+    },
     drawHandler: function (res, e) {
         e.preventDefault();
         e.stopPropagation();
@@ -157,10 +202,12 @@ Screenshot.board.prototype = {
                     this.blurctx.clearRect(0, 0, this.width, this.height);
                     this.savectx.drawImage(this.dom.$canvas, 0, 0);
                 }
+
                 break;
             case "up":
                this.downflag = false;
                console.log("up")
+
                switch(mode){
                    case "blur":
                        //update graph only when blur mode
@@ -174,6 +221,29 @@ Screenshot.board.prototype = {
                        this.ctx.drawImage(this.dom.$saveCanvas, 0, 0);
 
                        break;
+
+                   case "text":
+                       //TODO: check position not exceed canvas
+                       //append a textBox
+                       var  textBoxTpl = "<div class='textBox'><p class='text'></p></div>";
+                       this.$el.append(textBoxTpl);
+                       var domText  =  this.$el.find(".textBox");
+                       domText.attr("contenteditable", "true").height(this.opts.textBoxHeight)
+                           .width(this.opts.textBoxWidth)
+                           .css({position:"absolute",left: this.getXYreBoard(e).x, top: this.getXYreBoard(e).y, "border-style": "solid" });
+                       domText.focus();
+                       var boxLeft  = this.getXYreCanvas(e).x;
+                       var boxTop  = this.getXYreCanvas(e).y;
+
+                       var boardP = this;
+                       domText.bind('blur', function () {
+                          this.remove();
+                           boardP.drawText(boxLeft, boxTop, $(this).text());
+                       }).bind('click', function (e) {
+                           e.stopPropagation();
+                       })
+                          // .bind('input', function () {});
+
                }
                 break;
             case "out":
@@ -200,6 +270,7 @@ Screenshot.board.prototype = {
         }
     },
 
+
     updateXY : function (e) {
         //record mouse pos
         var viewportOffset = this.dom.$canvas.getBoundingClientRect();
@@ -208,6 +279,22 @@ Screenshot.board.prototype = {
         this.currX = e.clientX - viewportOffset.left;
         this.currY = e.clientY - viewportOffset.top;
     },
+
+    getXYreBoard : function (e) {
+        //console.log(this.$el);
+        var viewportOffset = this.$el[0].getBoundingClientRect();
+        var currX = e.clientX - viewportOffset.left;
+        var currY = e.clientY - viewportOffset.top;
+        return{x: currX, y: currY};
+    },
+    getXYreCanvas : function (coord) {
+       // console.log(this.$el);
+        var viewportOffset = this.dom.$canvas.getBoundingClientRect();
+        var currX = coord.x - viewportOffset.left;
+        var currY = coord.y  - viewportOffset.top;
+        return{x: currX, y: currY};
+    },
+
     drawPath: function(ctx, color, r) {
    ctx.beginPath();
        ctx.moveTo( this.prevX,  this.prevY);
@@ -216,6 +303,14 @@ Screenshot.board.prototype = {
        ctx.lineWidth = r;
         ctx.stroke();
         ctx.closePath();
-}
+},
+    downloadImg: function() {
+        var img = this.getImg();
+        img = img.replace("image/png", "image/octet-stream");
+        window.location.href = img;
+    },	getImg: function() {
+        console.log(this.dom.$canvas)
+        return this.dom.$canvas.toDataURL("image/png");
+    }
 
 };

@@ -1,0 +1,7 @@
+{
+  "name": "screenshot.js",
+  "version": "0.4.6",
+  "devDependencies": {
+    "grunt": "^1.0.1"
+  }
+}
